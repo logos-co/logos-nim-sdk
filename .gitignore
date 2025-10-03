@@ -1,0 +1,6 @@
+result
+lib/
+*.dylib
+*.so
+*.dll
+
