@@ -4,8 +4,16 @@
   inputs = {
     # Follow the same nixpkgs as logos-cpp-sdk to ensure Qt compatibility
     nixpkgs.follows = "logos-cpp-sdk/nixpkgs";
-    logos-cpp-sdk.url = "github:logos-co/logos-cpp-sdk";
-    logos-liblogos.url = "github:logos-co/logos-liblogos";
+    # Rev-pinned, not tracking master: the B3/B4 SDK split has not landed on
+    # logos-cpp-sdk's master yet, and the nixpkgs/Qt pin every input here
+    # `follows` comes from this input. a04b278 is the tip of
+    # feat/sdk-codegen-b3-d11. Drop the rev once that branch merges.
+    logos-cpp-sdk.url = "github:logos-co/logos-cpp-sdk/a04b27888e1d126578f639ed46dae0c777990a10";
+    # Rev-pinned: this SDK's embedded-core path needs the liblogos that is
+    # aligned with the split Qt host runtime (it pins logos-plugin-qt cc24fa1c
+    # and the per-client token store below). That alignment lives on
+    # fix/b4-align-protocol-with-qt-host, not on master; f2a15ef3 is its tip.
+    logos-liblogos.url = "github:logos-co/logos-liblogos/f2a15ef3022d8fb71dac3d612c8edec839fc51e7";
 
     # The SHARED liblogos_protocol carries the lp_* C ABI this SDK dlopens.
     # liblogos_core links the STATIC archive and re-exports no lp_* symbol
@@ -19,13 +27,25 @@
     # is a real hazard. Measured: pinning the shared library independently, at
     # the same MAJOR.MINOR but a different revision, SIGSEGV'd the e2e check on
     # the very first call. One protocol revision, built once, used by both.
-    logos-protocol.url = "github:logos-co/logos-protocol";
+    #
+    # Rev-pinned for the same reason the two inputs above are: the lp_* surface
+    # this SDK consumes, and the TokenManager::forIdentity/isolateIdentity the
+    # aligned liblogos calls, live on feat/per-client-token-store and NOT on
+    # logos-protocol's master. c8bab12 is its tip, and is exactly what
+    # logos-liblogos f2a15ef3 pins — so the `follows` below collapses to one
+    # build rather than silently reintroducing the two-copy hazard described
+    # above. Drop the rev once that branch merges.
+    logos-protocol.url = "github:logos-co/logos-protocol/c8bab12834dbf92155b483546875e6078d17c74e";
     logos-liblogos.inputs.logos-protocol.follows = "logos-protocol";
 
     # Fixture for the end-to-end check: a real module with a method/event
     # matrix. Follows this flake's liblogos so the module and the core in the
     # check are the same generation.
-    logos-test-modules.url = "github:logos-co/logos-test-modules";
+    # a639b93 is the tip of feat/b4-repoint-qt-host — the generation of the
+    # fixture that is built against the split Qt host. Master's test modules
+    # still target the pre-split runtime, so an unpinned url here would load a
+    # module built against a different core than the one embedded above.
+    logos-test-modules.url = "github:logos-co/logos-test-modules/a639b93475bf135d283288c31b8499b7f4d09f92";
     logos-test-modules.inputs.logos-liblogos.follows = "logos-liblogos";
   };
 
