@@ -2,18 +2,31 @@
   description = "logos-nim-sdk — protocol-native Nim SDK (lp_* consumer over logos-protocol)";
 
   inputs = {
-    # Follow the same nixpkgs as logos-cpp-sdk to ensure Qt compatibility
+    # Follow the same nixpkgs as logos-cpp-sdk to ensure Qt compatibility.
     nixpkgs.follows = "logos-cpp-sdk/nixpkgs";
-    # Rev-pinned, not tracking master: the B3/B4 SDK split has not landed on
-    # logos-cpp-sdk's master yet, and the nixpkgs/Qt pin every input here
-    # `follows` comes from this input. a04b278 is the tip of
-    # feat/sdk-codegen-b3-d11. Drop the rev once that branch merges.
-    logos-cpp-sdk.url = "github:logos-co/logos-cpp-sdk/a04b27888e1d126578f639ed46dae0c777990a10";
-    # Rev-pinned: this SDK's embedded-core path needs the liblogos that is
-    # aligned with the split Qt host runtime (it pins logos-plugin-qt cc24fa1c
-    # and the per-client token store below). That alignment lives on
-    # fix/b4-align-protocol-with-qt-host, not on master; f2a15ef3 is its tip.
-    logos-liblogos.url = "github:logos-co/logos-liblogos/f2a15ef3022d8fb71dac3d612c8edec839fc51e7";
+
+    # Master-tracking again. This was rev-pinned to a04b2788 (the tip of
+    # feat/sdk-codegen-b3-d11) while the B3/B4 SDK split lived only on that
+    # branch. logos-cpp-sdk#138 ("split the SDK by capability, retire the
+    # provider-header path, and harden the cdylib decode") MERGED as 95d7b3a9,
+    # so master carries it. #138 was SQUASH-merged, so a04b2788 is not an
+    # ancestor of master even though its content is in master -- check files,
+    # not `git merge-base --is-ancestor`.
+    #
+    # This flake uses the input for exactly one thing: the nixpkgs/Qt pin that
+    # `nixpkgs.follows` above resolves. Master keeps a `nixpkgs` input (it now
+    # follows logos-nix/nixpkgs), so that path still resolves.
+    logos-cpp-sdk.url = "github:logos-co/logos-cpp-sdk";
+
+    # Master-tracking again. This was rev-pinned to f2a15ef3, the tip of
+    # fix/b4-align-protocol-with-qt-host, because the embedded-core path needs
+    # a liblogos aligned with the SPLIT Qt host runtime -- one that takes
+    # logos-qt-host from logos-plugin-qt and calls the per-client token store.
+    # logos-liblogos#177 ("track protocol and plugin-qt master") MERGED as
+    # 93207e41 and is exactly that alignment: master's flake.nix now tracks
+    # logos-protocol master and logos-plugin-qt master (logos-plugin-qt#19
+    # MERGED as 9b2c64e5) with no rev pin of its own.
+    logos-liblogos.url = "github:logos-co/logos-liblogos";
 
     # The SHARED liblogos_protocol carries the lp_* C ABI this SDK dlopens.
     # liblogos_core links the STATIC archive and re-exports no lp_* symbol
@@ -21,30 +34,42 @@
     # is a separate, required artifact.
     #
     # The `follows` below is load-bearing, not tidiness. An embedded-core
-    # process holds BOTH copies of logos-protocol — the shared one this SDK
-    # dlopens and the static one inside liblogos_core — and Qt's QMetaType
+    # process holds BOTH copies of logos-protocol -- the shared one this SDK
+    # dlopens and the static one inside liblogos_core -- and Qt's QMetaType
     # registry is process-global, so two builds registering the same type names
     # is a real hazard. Measured: pinning the shared library independently, at
     # the same MAJOR.MINOR but a different revision, SIGSEGV'd the e2e check on
     # the very first call. One protocol revision, built once, used by both.
+    # That invariant is maintained by the `follows`, not by a rev, so keep it.
     #
-    # Rev-pinned for the same reason the two inputs above are: the lp_* surface
-    # this SDK consumes, and the TokenManager::forIdentity/isolateIdentity the
-    # aligned liblogos calls, live on feat/per-client-token-store and NOT on
-    # logos-protocol's master. c8bab12 is its tip, and is exactly what
-    # logos-liblogos f2a15ef3 pins — so the `follows` below collapses to one
-    # build rather than silently reintroducing the two-copy hazard described
-    # above. Drop the rev once that branch merges.
-    logos-protocol.url = "github:logos-co/logos-protocol/c8bab12834dbf92155b483546875e6078d17c74e";
+    # Master-tracking again. The rev pin (c8bab12, the tip of
+    # feat/per-client-token-store) existed because the lp_* surface this SDK
+    # binds and the TokenManager::forIdentity/::isolateIdentity the aligned
+    # liblogos calls lived only on that branch. logos-protocol#59 ("per-client
+    # token store, the host-services C ABI, and a container shape-check")
+    # MERGED: master (f4407ff4) carries forIdentity/isolateIdentity in
+    # cpp/token_manager.h, and cpp/logos_protocol.h exports all fifteen lp_*
+    # entry points logos_protocol.nim binds as REQUIRED plus the optional
+    # lp_pending_subscriptions (checked against master's header, not inferred).
+    logos-protocol.url = "github:logos-co/logos-protocol";
     logos-liblogos.inputs.logos-protocol.follows = "logos-protocol";
 
     # Fixture for the end-to-end check: a real module with a method/event
     # matrix. Follows this flake's liblogos so the module and the core in the
     # check are the same generation.
-    # a639b93 is the tip of feat/b4-repoint-qt-host — the generation of the
-    # fixture that is built against the split Qt host. Master's test modules
-    # still target the pre-split runtime, so an unpinned url here would load a
-    # module built against a different core than the one embedded above.
+    #
+    # STILL REV-PINNED, and this one is not retirable yet. a639b934 is the tip
+    # of feat/b4-repoint-qt-host, which is 10 commits AHEAD of master and 0
+    # behind (verified via the GitHub compare API) and has NOT merged. Those 10
+    # commits migrate test_basic_module to `interface: "universal"` and link the
+    # module tests against logos-qt-host rather than logos-qt-sdk; master's
+    # test_basic_module is still the legacy Qt-plugin shape
+    # (src/test_basic_module_{interface,plugin}.h). Retire this pin when
+    # feat/b4-repoint-qt-host merges.
+    #
+    # Note that master's tip IS the default branch, so dropping the rev here
+    # and running `nix flake update logos-test-modules` would report success
+    # while silently moving the fixture BACKWARDS by those 10 commits.
     logos-test-modules.url = "github:logos-co/logos-test-modules/a639b93475bf135d283288c31b8499b7f4d09f92";
     logos-test-modules.inputs.logos-liblogos.follows = "logos-liblogos";
   };
