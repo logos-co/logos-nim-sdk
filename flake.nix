@@ -63,14 +63,18 @@
     # behind (verified via the GitHub compare API) and has NOT merged. Those 10
     # commits migrate test_basic_module to `interface: "universal"` and link the
     # module tests against logos-qt-host rather than logos-qt-sdk; master's
-    # test_basic_module is still the legacy Qt-plugin shape
-    # (src/test_basic_module_{interface,plugin}.h). Retire this pin when
-    # feat/b4-repoint-qt-host merges.
+    # Unpinned: feat/b4-repoint-qt-host merged (logos-test-modules#44), which is
+    # the condition this pin named. It was held because test_basic_module was
+    # still the legacy Qt-plugin shape (src/test_basic_module_{interface,plugin}.h)
+    # and master's tip was BEHIND the pin, so an innocent-looking
+    # `nix flake update` would have reported success while moving the fixture
+    # backwards.
     #
-    # Note that master's tip IS the default branch, so dropping the rev here
-    # and running `nix flake update logos-test-modules` would report success
-    # while silently moving the fixture BACKWARDS by those 10 commits.
-    logos-test-modules.url = "github:logos-co/logos-test-modules/a639b93475bf135d283288c31b8499b7f4d09f92";
+    # That is no longer the case, checked rather than assumed: master's
+    # test-basic-module/src holds test_basic_module_impl.{h,cpp} and its
+    # metadata.json reads interface: "universal" — the repointed shape, not the
+    # legacy one.
+    logos-test-modules.url = "github:logos-co/logos-test-modules";
     logos-test-modules.inputs.logos-liblogos.follows = "logos-liblogos";
   };
 
