@@ -15,6 +15,8 @@
 import ./sdk/bytes
 import ./sdk/wire
 import ./sdk/lp_client
+import ./sdk/events
+import ./sdk/manifest
 import ./sdk/module
 
-export bytes, wire, lp_client, module
+export bytes, wire, lp_client, events, manifest, module

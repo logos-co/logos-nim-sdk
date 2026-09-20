@@ -18,13 +18,15 @@
 ##
 ## What is still hand-written is `interface.json`, because `logos-lidl-gen` has
 ## no Nim backend to emit it from the contract. That is the remaining gap.
-import std/[json, locks]
+import std/[json, locks, macros]
 import system/ansi_c
 import dispatch_macro          # nim-ffi
 import ./bytes
 import ./wire
+import ./events
+import ./manifest
 
-export dispatch_macro, bytes, wire
+export dispatch_macro, bytes, wire, events, manifest
 
 type EmitCallback* = proc(name, payload: cstring, userData: pointer)
   {.cdecl, gcsafe, raises: [].}
@@ -74,8 +76,25 @@ proc renderError*(origin: string, e: DispatchError): JsonNode =
   of deRaised: dispatchFailed(origin, e.message)
   of deUnknownMethod: nil    # NULL on the wire, not a structured error
 
-template logosModule*(modName, modVersion, contract, interfaceJson: static string) =
-  ## Terminal. Emits the seven exports, after every `{.dispatchMethod.}`.
+macro buildInterfaceJson*(): untyped =
+  ## The manifest, assembled at compile time from the annotations. Methods in
+  ## declaration order, then the three identity built-ins, then events -- the
+  ## order the Rust generator emits, so the two can be compared byte for byte.
+  result = quote do:
+    block:
+      var entries = newJArray()
+      for m in dispatchMethodMeta():
+        var ps: seq[(string, string)] = @[]
+        for prm in m.params: ps.add((prm.name, prm.nimType))
+        entries.add(methodEntry(m.wireName, m.doc, ps, m.returnType))
+      for e in identityEntries(): entries.add(e)
+      for (wire, params, doc) in logosEventMetaSeq():
+        entries.add(eventEntry(wire, doc, params))
+      $entries
+
+template logosModule*(modName, modVersion, contract: static string) =
+  ## Terminal. Emits the seven exports, after every `{.dispatchMethod.}` and
+  ## `{.logosEvent.}`.
   bind cstrdup, renderError, emitCb, emitUserData, logosLock, moduleOrigin
 
   # Logos carries binary as {"_bytes":"<base64url>"}; nim-ffi asks the ABI.
@@ -85,6 +104,7 @@ template logosModule*(modName, modVersion, contract, interfaceJson: static strin
     toLogosBytes(b)
 
   let logosTable = dispatchTableFor()
+  let logosInterface = buildInterfaceJson()
 
   proc logos_module_dispatch(meth: cstring, argsJson: cstring): cstring
       {.exportc, cdecl, dynlib.} =
@@ -122,7 +142,7 @@ template logosModule*(modName, modVersion, contract, interfaceJson: static strin
       return cstrdup($dispatchFailed(modName, "unhandled exception in " & $meth))
 
   proc logos_module_get_methods(): cstring {.exportc, cdecl, dynlib.} =
-    return cstrdup(interfaceJson)
+    return cstrdup(logosInterface)
 
   proc logos_module_set_context(modulePath, instanceId, persistencePath: cstring)
       {.exportc, cdecl, dynlib.} =
