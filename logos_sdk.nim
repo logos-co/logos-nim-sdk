@@ -15,5 +15,6 @@
 import ./sdk/bytes
 import ./sdk/wire
 import ./sdk/lp_client
+import ./sdk/module
 
-export bytes, wire, lp_client
+export bytes, wire, lp_client, module

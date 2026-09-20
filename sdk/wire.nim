@@ -17,19 +17,19 @@ const
   RejectionCodes* = ["dispatch_failed", "invalid_args", "unknown_method"]
     ## Closed set. A fourth code would be silently ignored by every consumer.
 
-func rejection*(code, message, origin: string): JsonNode =
+func rejection*(code, message, origin: string): JsonNode {.raises: [].} =
   return %*{"code": code, "message": message, "origin": origin}
 
-func invalidArgs*(origin: string, want, got: int): JsonNode =
+func invalidArgs*(origin: string, want, got: int): JsonNode {.raises: [].} =
   ## Wording is shared verbatim with the Rust and C++ scaffolds; a consumer's
   ## tests match on it.
   return rejection("invalid_args",
                    "expected " & $want & " arguments, got " & $got, origin)
 
-func dispatchFailed*(origin, message: string): JsonNode =
+func dispatchFailed*(origin, message: string): JsonNode {.raises: [].} =
   return rejection("dispatch_failed", message, origin)
 
-func jsonKindName*(n: JsonNode): string =
+func jsonKindName*(n: JsonNode): string {.raises: [].} =
   ## The spelling used in "expected X at argN, got Y".
   case n.kind
   of JString: "string"
@@ -39,11 +39,11 @@ func jsonKindName*(n: JsonNode): string =
   of JArray: "array"
   of JObject: "object"
 
-func wrongType*(origin, want: string, at: int, got: JsonNode): JsonNode =
+func wrongType*(origin, want: string, at: int, got: JsonNode): JsonNode {.raises: [].} =
   return dispatchFailed(origin,
     "expected " & want & " at arg" & $at & ", got " & jsonKindName(got))
 
-func asRejection*(n: JsonNode): string =
+func asRejection*(n: JsonNode): string {.raises: [].} =
   ## The fold a CONSUMER applies to a successful result. Returns the message if
   ## this is a refusal, or "" if it is ordinary data.
   ##
@@ -53,14 +53,14 @@ func asRejection*(n: JsonNode): string =
   if n == nil or n.kind != JObject or n.len != 3: return ""
   if not (n.hasKey("code") and n.hasKey("message") and n.hasKey("origin")):
     return ""
-  if n["code"].kind != JString or n["message"].kind != JString or
-     n["origin"].kind != JString: return ""
-  if n["code"].getStr() notin RejectionCodes: return ""
-  return n["message"].getStr()
+  if n.getOrDefault("code").kind != JString or n.getOrDefault("message").kind != JString or
+     n.getOrDefault("origin").kind != JString: return ""
+  if n.getOrDefault("code").getStr() notin RejectionCodes: return ""
+  return n.getOrDefault("message").getStr()
 
 # ------------------------------------------------------------ introspection
 
-func qtTypeName*(lidlType: string): string =
+func qtTypeName*(lidlType: string): string {.raises: [].} =
   ## `logos_module_get_methods` reports Qt metatype spellings, because the
   ## manifest feeds a Qt-based registry. This is the mapping the Rust generator
   ## uses; a module that spells them differently is invisible to the host's

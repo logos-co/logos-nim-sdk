@@ -47,15 +47,15 @@ func decodeB64Url*(s: string): seq[byte] =
       outBytes.add(byte((acc shr bits) and 0xff))
   return outBytes
 
-func toLogosBytes*(b: openArray[byte]): JsonNode =
+func toLogosBytes*(b: openArray[byte]): JsonNode {.raises: [].} =
   ## Always the canonical form. Never emit one of the lenient shapes.
   return %*{"_bytes": encodeB64Url(b)}
 
-func isLogosBytes*(n: JsonNode): bool =
+func isLogosBytes*(n: JsonNode): bool {.raises: [].} =
   return n.kind == JObject and n.len == 1 and n.hasKey("_bytes") and
-         n["_bytes"].kind == JString
+         n.getOrDefault("_bytes").kind == JString
 
-func fromLogosBytes*(n: JsonNode): seq[byte] =
+func fromLogosBytes*(n: JsonNode): seq[byte] {.raises: [].} =
   ## Canonical form first, then the four lenient shapes logos-protocol's
   ## `bytesFromJsonLenient` accepts:
   ##   a bare string  -> its UTF-8 bytes   (a QString reaching a bstr parameter)
@@ -64,7 +64,9 @@ func fromLogosBytes*(n: JsonNode): seq[byte] =
   ## Anything else -- bool, null, an untagged object -- yields nothing, and the
   ## caller reports "expected bytes at argN".
   if isLogosBytes(n):
-    return decodeB64Url(n["_bytes"].getStr())
+    # `[]` on a JsonNode raises KeyError; isLogosBytes has already established
+    # the key is there, and getOrDefault keeps that provable to the compiler.
+    return decodeB64Url(n.getOrDefault("_bytes").getStr())
   case n.kind
   of JString: return cast[seq[byte]](n.getStr())
   of JInt: return cast[seq[byte]]($n.getInt())
