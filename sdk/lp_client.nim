@@ -2,13 +2,14 @@
 ##
 ## `lp_invoke` is synchronous by signature -- the result leaves through an
 ## out-parameter -- so this blocks the calling thread for the duration. That is
-## not a simplification: logos-cpp-sdk dispatches provider methods with
-## Qt::DirectConnection, no pool and no queue, so a call occupies its caller's
-## thread on the mainline path too.
+## not a simplification: logos-cpp-sdk dispatches provider methods directly on
+## the calling thread, with no pool and no queue, so a call occupies its
+## caller's thread on the mainline path too.
 ##
 ## The symbols are left undefined at link and bound by the host at dlopen,
 ## exactly as the Rust cdylib's are.
-import std/[json, tables]
+import std/[json, locks, tables]
+import results
 import ./wire
 
 const LP_OK* = 0.cint
@@ -22,29 +23,54 @@ proc lp_invoke(c: LpClientPtr, meth, argsJson: cstring, timeoutMs: cint,
                outResult, outError: ptr cstring): cint {.importc, cdecl.}
 proc lp_string_free(s: cstring) {.importc, cdecl.}
 
-var clients: Table[string, LpClientPtr]
-  ## One handle per (origin, target). The Rust SDK caches the same way, so a
-  ## concurrent fan-out coalesces into a single capability handshake instead of
-  ## racing N of them.
-  ##
-  ## Kept as a table of HANDLES rather than of client objects on purpose: a
-  ## `var T` returned from a Table is a copy in Nim, so handing callers a
-  ## mutable client is a quiet way to open a connection on a temporary and then
-  ## send every call through an unopened one.
+type LpResultCb* = proc(ok: cint, json: cstring, userData: pointer) {.cdecl.}
+  ## lp_invoke_async's completion: `ok` non-zero with the result JSON, or zero
+  ## with the error object. Arrives on a protocol thread, never the caller's.
+proc lp_invoke_async(c: LpClientPtr, meth, argsJson: cstring, timeoutMs: cint,
+                     cb: LpResultCb, userData: pointer): cint {.importc, cdecl.}
 
-proc handleFor(target, origin: string): LpClientPtr =
+var
+  clients: Table[string, LpClientPtr]
+  clientsLock: Lock
+    ## Clients are shared by every thread of the image (a module's handlers
+    ## run on the host's thread, its node may call out from its own).
+
+initLock(clientsLock)
+
+proc handleFor(target, origin: string): LpClientPtr {.gcsafe, raises: [].} =
+  ## One client per (origin, target), made on first use. Both transport
+  ## arguments are NULL: the host chooses. Passing `origin` is the whole
+  ## point -- it is how the far side learns who is asking.
   let key = origin & "\0" & target
-  if not clients.hasKey(key):
-    # Both transport arguments are NULL: the host chooses. Passing `origin` is
-    # the whole point -- it is how the far side learns who is asking.
-    clients[key] = lp_client_create(target.cstring, origin.cstring, nil, nil)
-  return clients[key]
+  {.cast(gcsafe).}:
+    withLock clientsLock:
+      if not clients.hasKey(key):
+        clients[key] = lp_client_create(target.cstring, origin.cstring, nil, nil)
+      return clients.getOrDefault(key, LpClientPtr(nil))
 
 proc closeClients*() =
   ## For a module tearing down. Not required: the host outlives us.
   for _, h in clients:
     if pointer(h) != nil: lp_client_destroy(h)
   clients.clear()
+
+type LogosCall*[T] = object
+  ## What a generated typed client answers with.
+  ##
+  ## Deliberately not an exception. A refusal is an ordinary outcome on this
+  ## ABI -- it arrives as a *successful* dispatch carrying a rejection object --
+  ## and an exception escaping a handler is the one thing the module ABI
+  ## forbids. A caller that wants to degrade rather than fail, as a transport
+  ## with no vault must, can do so by reading `ok`.
+  ok*: bool
+  value*: T
+  error*: string
+
+proc callOk*[T](v: sink T): LogosCall[T] =
+  return LogosCall[T](ok: true, value: v)
+
+proc callFailed*[T](msg: string): LogosCall[T] =
+  return LogosCall[T](ok: false, error: msg)
 
 proc callModule*(target, origin, meth: string, args: JsonNode,
                  timeoutMs = 0): tuple[ok: bool, value: JsonNode, error: string] =
@@ -84,3 +110,18 @@ proc callModule*(target, origin, meth: string, args: JsonNode,
   if refused.len > 0:
     return (false, nil, refused)
   return (true, parsed, "")
+
+proc callModuleAsync*(target, origin, meth: string, args: JsonNode, timeoutMs: int,
+                      cb: LpResultCb, userData: pointer): Result[void, string] {.gcsafe, raises: [].} =
+  ## Fires `meth` at `target` and returns at once; `cb` gets the reply, on a
+  ## protocol thread, within `timeoutMs` (the host answers a timeout error
+  ## itself). The reply is the module's JSON verbatim -- no rejection fold, so
+  ## a caller that wants the raw envelope gets it.
+  let handle = handleFor(target, origin)
+  if pointer(handle) == nil:
+    return err("no client for " & target)
+  let argsText = try: $args except CatchableError: "[]"
+  let rc = lp_invoke_async(handle, meth.cstring, argsText.cstring, timeoutMs.cint, cb, userData)
+  if rc != LP_OK:
+    return err("lp_invoke_async failed with " & $rc)
+  return ok()

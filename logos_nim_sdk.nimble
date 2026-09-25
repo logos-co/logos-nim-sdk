@@ -5,12 +5,16 @@ description   = "Nim SDK for Logos Core: call modules, and be one"
 license       = "MIT or Apache License 2.0"
 srcDir        = "."
 
-# The consumer half (logos_api.nim) drives liblogos_core and needs nothing but
-# the stdlib. The provider half (sdk/) implements the module ABI a Logos host
-# loads, and leans on nim-ffi for the FFI machinery rather than restating it.
+# Stdlib only, both halves. The consumer half (logos_api.nim) drives
+# liblogos_core; the provider half (sdk/) implements the module ABI a Logos
+# host loads. The single-entry-point dispatch profile lives here too: it was
+# briefly a nim-ffi feature, but Logos is its only consumer and splitting one
+# pragma across two packages bought nothing but a second repo to release.
 requires "nim >= 2.0.0"
-requires "https://github.com/logos-messaging/nim-ffi >= 0.3.0"
 
+# Every tests/test_*.nim, so adding one does not mean remembering to list it
+# here -- and so this task cannot name a file that is not there.
 task test, "Run the SDK test suite":
-  for t in ["test_bytes", "test_wire", "test_lidl_text"]:
-    exec "nim c -r --hints:off --path:. -o:/tmp/lns_" & t & " tests/" & t & ".nim"
+  for f in listFiles("tests"):
+    if f.endsWith(".nim"):
+      exec "nim c -r --hints:off --path:. -o:/tmp/lns_test " & f

@@ -12,7 +12,7 @@
 ##     different key order is not byte-identical, and byte-identity is the only
 ##     way to know the two agree.
 ##   * `parameters` is OMITTED entirely for a method that takes none, rather
-##     than emitted empty -- matching the Qt introspector this schema imitates.
+##     than emitted empty -- matching the introspector this schema imitates.
 import std/[json, strutils, algorithm]
 import ./wire
 
@@ -29,8 +29,8 @@ func snakeParam*(s: string): string =
   return r
 
 func nimTypeToLidl*(nimType: string): string =
-  ## Nim's spelling of a type to the contract's. The ABI reports Qt names, and
-  ## `qtTypeName` maps from LIDL, so this is the missing first half.
+  ## Nim's spelling of a type to the contract's. `metatypeName` maps from LIDL
+  ## on to the wire, so this is the missing first half.
   case nimType
   of "string": "tstr"
   of "seq[byte]": "bstr"
@@ -38,11 +38,12 @@ func nimTypeToLidl*(nimType: string): string =
   of "uint", "uint64": "uint"
   of "float", "float64": "float64"
   of "bool": "bool"
+  of "LogosResult": "result"
   of "JsonNode": "any"
   else: "any"
 
 func qtForNim*(nimType: string): string =
-  return qtTypeName(nimTypeToLidl(nimType))
+  return metatypeName(nimTypeToLidl(nimType))
 
 proc sortedObj(pairs: openArray[(string, JsonNode)]): JsonNode =
   ## An object with its keys in alphabetical order.

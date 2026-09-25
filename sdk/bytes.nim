@@ -30,7 +30,7 @@ func encodeB64Url*(bytes: openArray[byte]): string =
   return s
 
 func decodeB64Url*(s: string): seq[byte] =
-  ## Tolerates padding on input: a Qt or CLI caller may well add it, and
+  ## Tolerates padding on input: a hand-rolled or CLI caller may well add it, and
   ## refusing would make this stricter than the encoders it must interoperate
   ## with. Characters outside the alphabet are skipped.
   var acc: uint32 = 0

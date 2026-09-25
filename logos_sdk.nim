@@ -11,7 +11,9 @@
 ## The provider half is deliberately not a framework. Until logos-lidl-gen
 ## grows a Nim backend, a module still writes its own seven exports and its own
 ## dispatch table; what it should not have to write again is base64url, the
-## rejection fold, or the Qt metatype spellings. Those are here.
+## rejection fold, or the manifest's type spellings. Those are here.
+import ./sdk/dispatch
+import ./sdk/dispatch_macro
 import ./sdk/bytes
 import ./sdk/wire
 import ./sdk/lp_client
@@ -19,4 +21,4 @@ import ./sdk/events
 import ./sdk/manifest
 import ./sdk/module
 
-export bytes, wire, lp_client, events, manifest, module
+export dispatch, dispatch_macro, bytes, wire, lp_client, events, manifest, module

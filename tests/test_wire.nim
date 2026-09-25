@@ -34,14 +34,14 @@ suite "the rejection fold":
     check asRejection(%"a string") == ""
     check asRejection(newJNull()) == ""
 
-suite "Qt metatype spellings":
+suite "manifest type spellings":
   test "the mapping the generator uses":
-    check qtTypeName("tstr") == "QString"
-    check qtTypeName("bstr") == "QByteArray"   # NOT QVariant
-    check qtTypeName("int") == "int"
-    check qtTypeName("uint") == "int"
-    check qtTypeName("float64") == "double"
-    check qtTypeName("bool") == "bool"
-    check qtTypeName("result") == "LogosResult"
-    check qtTypeName("any") == "QVariant"
-    check qtTypeName("SomeRecord") == "QVariant"
+    check metatypeName("tstr") == "QString"
+    check metatypeName("bstr") == "QByteArray"   # NOT QVariant
+    check metatypeName("int") == "int"
+    check metatypeName("uint") == "int"
+    check metatypeName("float64") == "double"
+    check metatypeName("bool") == "bool"
+    check metatypeName("result") == "LogosResult"
+    check metatypeName("any") == "QVariant"
+    check metatypeName("SomeRecord") == "QVariant"

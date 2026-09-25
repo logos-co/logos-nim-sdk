@@ -60,11 +60,11 @@ func asRejection*(n: JsonNode): string {.raises: [].} =
 
 # ------------------------------------------------------------ introspection
 
-func qtTypeName*(lidlType: string): string {.raises: [].} =
-  ## `logos_module_get_methods` reports Qt metatype spellings, because the
-  ## manifest feeds a Qt-based registry. This is the mapping the Rust generator
-  ## uses; a module that spells them differently is invisible to the host's
-  ## introspection even though its dispatch works.
+func metatypeName*(lidlType: string): string {.raises: [].} =
+  ## `logos_module_get_methods` reports the host registry's metatype names,
+  ## not LIDL's. These spellings are fixed by the ABI, so they are reproduced
+  ## verbatim from the Rust generator; a module that spells them differently
+  ## is invisible to the host's introspection even though its dispatch works.
   case lidlType
   of "tstr": "QString"
   of "bstr": "QByteArray"
@@ -73,3 +73,14 @@ func qtTypeName*(lidlType: string): string {.raises: [].} =
   of "bool": "bool"
   of "result": "LogosResult"
   else: "QVariant"      # composites, `any`, and named record types
+
+type LogosResult* = JsonNode
+  ## A method that answers in the host's own result shape,
+  ## `{"success": bool, "value": ..., "error": ...}`, verbatim. Spelled `result`
+  ## in the contract; the wrapper passes the object through untouched.
+
+proc logosOk*(value: JsonNode = newJNull()): LogosResult =
+  return %*{"success": true, "value": value, "error": nil}
+
+proc logosFail*(error: string): LogosResult =
+  return %*{"success": false, "value": nil, "error": error}

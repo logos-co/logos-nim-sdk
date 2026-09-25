@@ -1,4 +1,4 @@
-## Being a Logos module: the seven C exports, over nim-ffi's dispatch profile.
+## Being a Logos module: the seven C exports, over the dispatch profile.
 ##
 ## A module writes ordinary Nim procs and one terminal call:
 ##
@@ -20,7 +20,7 @@
 ## no Nim backend to emit it from the contract. That is the remaining gap.
 import std/[json, locks, macros]
 import system/ansi_c
-import dispatch_macro          # nim-ffi
+import ./dispatch_macro
 import ./bytes
 import ./wire
 import ./events
@@ -29,6 +29,7 @@ import ./manifest
 export dispatch_macro, bytes, wire, events, manifest
 
 type EmitCallback* = proc(name, payload: cstring, userData: pointer)
+type UnloadDoneCallback* = proc(userData: pointer)
   {.cdecl, gcsafe, raises: [].}
   ## The host's. `raises: []` because it is reached across a C boundary: an
   ## exception crossing back into Nim from it would be undefined behaviour.
@@ -36,6 +37,9 @@ type EmitCallback* = proc(name, payload: cstring, userData: pointer)
 var
   logosLock*: Lock
   emitCb: EmitCallback
+  callCaller: string
+  persistencePath*: string
+    ## Where this instance may keep state, as the host told set_context.
   emitUserData: pointer
   moduleOrigin*: string
 
@@ -92,22 +96,27 @@ macro buildInterfaceJson*(): untyped =
         entries.add(eventEntry(wire, doc, params))
       $entries
 
-template logosModule*(modName, modVersion, contract: static string) =
+proc noRuntimeInit*() = discard
+
+template logosModule*(modName, modVersion, contract: static string,
+                      ensureRuntime: untyped = noRuntimeInit) =
   ## Terminal. Emits the seven exports, after every `{.dispatchMethod.}` and
   ## `{.logosEvent.}`.
-  bind cstrdup, renderError, emitCb, emitUserData, logosLock, moduleOrigin
+  bind cstrdup, renderError, emitCb, emitUserData, logosLock, moduleOrigin, callCaller, persistencePath, noRuntimeInit
 
-  # Logos carries binary as {"_bytes":"<base64url>"}; nim-ffi asks the ABI.
-  dispatchBytesDecode = proc(n: JsonNode): seq[byte] {.raises: [].} =
-    fromLogosBytes(n)
-  dispatchBytesEncode = proc(b: seq[byte]): JsonNode {.raises: [].} =
-    toLogosBytes(b)
+  # The name this image announces when it calls out, set BEFORE any outbound
+  # client can exist. Until now it was only ever set by accept_token, so a host
+  # that issues no tokens left every outbound call anonymous -- and the origin
+  # is the single field the capability story rests on. logos-rust-sdk sets it
+  # from the generated constant for the same reason; this is the same fix.
+  moduleOrigin = modName
 
   let logosTable = dispatchTableFor()
   let logosInterface = buildInterfaceJson()
 
   proc logos_module_dispatch(meth: cstring, argsJson: cstring): cstring
       {.exportc, cdecl, dynlib.} =
+    ensureRuntime()
     if meth == nil: return nil
     try:
       var args = newJArray()
@@ -142,30 +151,64 @@ template logosModule*(modName, modVersion, contract: static string) =
       return cstrdup($dispatchFailed(modName, "unhandled exception in " & $meth))
 
   proc logos_module_get_methods(): cstring {.exportc, cdecl, dynlib.} =
+    ensureRuntime()
     return cstrdup(logosInterface)
 
-  proc logos_module_set_context(modulePath, instanceId, persistencePath: cstring)
+  proc logos_module_set_context(modulePath, instanceId, instancePersistencePath: cstring)
       {.exportc, cdecl, dynlib.} =
-    ## Accepted and ignored. Present because a host that finds it missing never
-    ## fires its context-ready hook.
-    discard
+    ## The instance's persistence path is kept for the module; the rest is
+    ## accepted and ignored. Present because a host that finds it missing
+    ## never fires its context-ready hook.
+    ensureRuntime()
+    withLock logosLock:
+      persistencePath = if instancePersistencePath == nil: "" else: $instancePersistencePath
 
   proc logos_module_set_emit_callback(cb: EmitCallback, userData: pointer)
       {.exportc, cdecl, dynlib.} =
+    ensureRuntime()
     withLock logosLock:
       emitCb = cb
       emitUserData = userData
 
   proc logos_module_accept_token(moduleName, token: cstring): cint
       {.exportc, cdecl, dynlib.} =
+    ensureRuntime()
     if moduleName == nil or token == nil: return -1
     withLock logosLock:
       moduleOrigin = $moduleName
     return 0
 
+  proc logos_module_accept_inbound_token(caller, token: cstring): cint
+      {.exportc, cdecl, dynlib.} =
+    ## The inbound door (protocol >= 0.8): a caller's token, saved by the host.
+    ensureRuntime()
+    if caller == nil or token == nil: return -1
+    return 0
+  proc logos_module_grant_host_services(servicesJson: cstring): cint
+      {.exportc, cdecl, dynlib.} =
+    ## Host services this module could be granted (protocol >= 0.3). None used.
+    ensureRuntime()
+    return 0
+  proc logos_module_set_unload_done_callback(cb: UnloadDoneCallback, userData: pointer)
+      {.exportc, cdecl, dynlib.} =
+    ## Deferred unload (protocol >= 0.5): this module unloads synchronously.
+    ensureRuntime()
+    discard
+  proc logos_module_about_to_unload(): cint {.exportc, cdecl, dynlib.} =
+    ensureRuntime()
+    return 0
+  proc logos_module_set_call_caller(callerJson: cstring)
+      {.exportc, cdecl, dynlib.} =
+    ## Who is calling (protocol >= 0.6), set around each dispatch; nil clears.
+    ensureRuntime()
+    withLock logosLock:
+      callCaller = if callerJson == nil: "" else: $callerJson
   proc logos_module_get_protocol_version(): cstring {.exportc, cdecl, dynlib.} =
-    ## Static storage; the caller must NOT free this one.
-    return "0.1.0".cstring
+    ## Static storage; the caller must NOT free this one. Everything
+    ## logos_module_impl.h 0.9 declares is exported here.
+    ensureRuntime()
+    return "0.9.0".cstring
 
   proc logos_module_string_free(s: cstring) {.exportc, cdecl, dynlib.} =
+    ensureRuntime()
     if s != nil: c_free(s)
