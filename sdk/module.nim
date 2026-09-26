@@ -25,6 +25,7 @@ import ./bytes
 import ./wire
 import ./events
 import ./manifest
+import ./lp_client
 
 export dispatch_macro, bytes, wire, events, manifest
 
@@ -172,18 +173,19 @@ template logosModule*(modName, modVersion, contract: static string,
 
   proc logos_module_accept_token(moduleName, token: cstring): cint
       {.exportc, cdecl, dynlib.} =
+    ## The outbound door: the token this module presents when it calls
+    ## `moduleName`. Filed with the protocol layer, which every lp client of
+    ## this image reads; it is not the module's name (that is set above).
     ensureRuntime()
     if moduleName == nil or token == nil: return -1
-    withLock logosLock:
-      moduleOrigin = $moduleName
-    return 0
+    return if saveOutboundToken($moduleName, $token): 0 else: -1
 
   proc logos_module_accept_inbound_token(caller, token: cstring): cint
       {.exportc, cdecl, dynlib.} =
     ## The inbound door (protocol >= 0.8): a caller's token, saved by the host.
     ensureRuntime()
     if caller == nil or token == nil: return -1
-    return 0
+    return if saveInboundToken($caller, $token): 0 else: -1
   proc logos_module_grant_host_services(servicesJson: cstring): cint
       {.exportc, cdecl, dynlib.} =
     ## Host services this module could be granted (protocol >= 0.3). None used.
