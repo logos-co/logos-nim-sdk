@@ -23,6 +23,21 @@ proc lp_invoke(c: LpClientPtr, meth, argsJson: cstring, timeoutMs: cint,
                outResult, outError: ptr cstring): cint {.importc, cdecl.}
 proc lp_string_free(s: cstring) {.importc, cdecl.}
 
+proc lp_token_save(moduleName, token: cstring): cint {.importc, cdecl.}
+proc lp_token_save_inbound(caller, token: cstring): cint {.importc, cdecl.}
+
+proc saveOutboundToken*(moduleName, token: string): bool =
+  ## The token this image presents when it calls `moduleName`. For "core" and
+  ## "capability_module" it is also the image's own credential -- the one
+  ## every requestModule handshake shows. The host hands it over through
+  ## logos_module_accept_token; without it every outbound call is refused.
+  return lp_token_save(moduleName.cstring, token.cstring) == LP_OK
+
+proc saveInboundToken*(caller, token: string): bool =
+  ## The token `caller` may present when it calls this image
+  ## (logos_module_accept_inbound_token, protocol >= 0.8).
+  return lp_token_save_inbound(caller.cstring, token.cstring) == LP_OK
+
 type LpResultCb* = proc(ok: cint, json: cstring, userData: pointer) {.cdecl.}
   ## lp_invoke_async's completion: `ok` non-zero with the result JSON, or zero
   ## with the error object. Arrives on a protocol thread, never the caller's.
