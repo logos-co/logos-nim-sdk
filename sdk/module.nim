@@ -30,6 +30,10 @@ import ./lp_client
 export dispatch_macro, bytes, wire, events, manifest
 
 type EmitCallback* = proc(name, payload: cstring, userData: pointer)
+  {.cdecl, gcsafe, raises: [].}
+  ## The host's. A C function pointer: without the calling convention this
+  ## would be a closure, passed as two words, and the host's user_data would
+  ## land in the closure's environment slot instead of its own parameter.
 type UnloadDoneCallback* = proc(userData: pointer)
   {.cdecl, gcsafe, raises: [].}
   ## The host's. `raises: []` because it is reached across a C boundary: an
