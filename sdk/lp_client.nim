@@ -48,6 +48,18 @@ proc handleFor(target, origin: string): LpClientPtr {.gcsafe, raises: [].} =
         clients[key] = lp_client_create(target.cstring, origin.cstring, nil, nil)
       return clients.getOrDefault(key, LpClientPtr(nil))
 
+proc openClient*(target, origin: string): Result[void, string] {.gcsafe, raises: [].} =
+  ## Makes the client for (origin, target) on the calling thread.
+  ##
+  ## Call it from a handler, i.e. on the host's dispatch thread. The protocol
+  ## layer owns a client from the thread that made it and delivers replies
+  ## through that thread's event loop; a client first made on a thread of the
+  ## module's own (a node thread) answers every call with nothing. The later
+  ## calls may come from any thread: they hop to the owner.
+  if pointer(handleFor(target, origin)) == nil:
+    return err("no client for " & target)
+  return ok()
+
 proc closeClients*() =
   ## For a module tearing down. Not required: the host outlives us.
   for _, h in clients:
