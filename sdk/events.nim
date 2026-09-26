@@ -93,5 +93,8 @@ macro logosEventMetaSeq*(): untyped =
     let pSeq = nnkPrefix.newTree(ident("@"),
       (if params.len == 0: nnkBracket.newTree() else: pArr))
     arr.add nnkTupleConstr.newTree(newLit(wire), pSeq, newLit(doc))
-  result = nnkPrefix.newTree(ident("@"),
-    (if logosEventMeta.len == 0: nnkBracket.newTree() else: arr))
+  if logosEventMeta.len == 0:
+    # a module with no events of its own: the empty seq still needs a type
+    return quote do:
+      newSeq[(string, seq[(string, string)], string)]()
+  result = nnkPrefix.newTree(ident("@"), arr)
